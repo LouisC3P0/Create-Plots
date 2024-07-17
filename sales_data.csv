@@ -1,0 +1,11 @@
+Product,Region,Month,Sales
+Product A,North,January,500
+Product A,North,February,450
+Product A,North,March,520
+Product A,West,April,480
+Product A,West,May,510
+Product A,East,June,530
+Product A,East,July,550
+Product A,South,August,540
+Product A,South,September,560
+
