@@ -1,0 +1,167 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+import seaborn as sns
+
+def calculate_sem(values):
+    n = len(values)
+    s = np.std(values, ddof=1)
+    sem = s / np.sqrt(n)
+    return sem
+
+def load_datasets(num_datasets):
+    datasets = []
+    for i in range(num_datasets):
+        while True:
+            file_path = input(f"Enter the path for dataset {i+1} --> ")
+            try:
+                data = pd.read_csv(file_path)
+                datasets.append(data)
+                break
+            except FileNotFoundError:
+                print(f"Error: File '{file_path}' not found. Please enter a valid path.")
+            except Exception as e:
+                print(f"Error: {e}. Please enter a valid path.")
+    return datasets
+
+def extract_multiple_columns_data(datasets):
+    column_data = []
+    valid_labels = []
+    for i, data in enumerate(datasets):
+        x_var = input(f"Enter the X variable name for dataset {i+1} --> ")
+        y_var = input(f"Enter the Y variable name for dataset {i+1} --> ")
+        group_var = input(f"Enter the grouping variable (e.g., Region) for dataset {i+1} --> ")
+        if y_var in data.columns and x_var in data.columns and group_var in data.columns:
+            for group in data[group_var].unique():
+                group_data = data[data[group_var] == group]
+                x_values = group_data[x_var].dropna().values
+                y_values = group_data[y_var].dropna().values
+                if np.issubdtype(y_values.dtype, np.number):
+                    column_data.append((x_values, y_values, group))
+                    valid_labels.append(f'{group}: {y_var}')
+                else:
+                    print(f"Warning: Y variable '{y_var}' in dataset {i+1} for group '{group}' contains non-numeric data and will be skipped.")
+        else:
+            print(f"Warning: X variable '{x_var}', Y variable '{y_var}', or grouping variable '{group_var}' not found in dataset {i+1}")
+    return column_data, valid_labels
+
+def create_rose_plot(data, input_color):
+    if 'angle' not in data.columns:
+        raise ValueError("CSV file must contain an 'angle' column")
+    
+    if 'magnitude' not in data.columns:
+        data['magnitude'] = 1
+
+    data['angle_rad'] = np.deg2rad(data['angle'])
+    
+    num_bins = len(data)
+    bins = np.linspace(0.0, 2 * np.pi, num_bins + 1)
+    
+    hist, bin_edges = np.histogram(data['angle_rad'], bins=bins, weights=data['magnitude'])
+    
+    width = 2 * np.pi / num_bins
+    
+    bottom = np.zeros_like(hist)
+
+    fig, ax = plt.subplots(subplot_kw=dict(projection='polar'))
+    bars = ax.bar(bin_edges[:-1], hist, width=width, bottom=bottom, color=input_color, edgecolor=None, alpha=0.5)
+    ax.grid(False)
+    ax.set_yticklabels([])
+    return fig, ax
+
+def get_boolean_input(prompt):
+    return input(prompt).lower() in ['true', '1', 't', 'y', 'yes']
+
+def get_int_input(prompt):
+    while True:
+        try:
+            return int(input(prompt))
+        except ValueError:
+            print("Invalid input. Please enter a valid integer.")
+
+def main():
+    plot_type = get_int_input('Enter 1 for Box Plot, 2 for Bar Plot, 3 for Line Plot, 4 for Violin + Strip Plot, 5 for Pseudo Color Plot, 6 for Spectrogram, or 7 for Rose Plot --> ')
+    
+    input_color = input('What color would you like your plot to be --> ') if plot_type in [1, 2, 3, 4, 7] else None
+    
+    multiple_data = get_boolean_input('Would you like to plot multiple datasets? (True/False) --> ')
+    num_datasets = get_int_input("Enter the number of datasets --> ") if multiple_data else 1
+    datasets = load_datasets(num_datasets)
+
+    if plot_type in [1, 2, 3, 4]:
+        column_data, valid_labels = extract_multiple_columns_data(datasets)
+
+        if column_data:
+            fig, ax = plt.subplots()
+
+            if plot_type == 1:  # Box Plot
+                notch = get_boolean_input('If you would like notches type True if you would not type False --> ')
+                flierprops = dict(marker='o', color='black', alpha=0.5, markersize=5)
+                ax.boxplot([data[1] for data in column_data], notch=notch, patch_artist=True, tick_labels=valid_labels, flierprops=flierprops, boxprops=dict(facecolor=input_color))
+            
+            elif plot_type == 2:  # Bar Plot
+                for i, (x_values, y_values, group) in enumerate(column_data):
+                    y_mean = y_values.mean()
+                    y_err = calculate_sem(y_values)
+                    ax.bar(valid_labels[i], y_mean, yerr=y_err, alpha=0.7, capsize=10, color=input_color, label=valid_labels[i])
+    
+            elif plot_type == 3:  # Line Plot
+                for i, (x_values, y_values, group) in enumerate(column_data):
+                    ax.plot(x_values, y_values, label=valid_labels[i])
+                    ax.errorbar(x_values, y_values, yerr=calculate_sem(y_values), capsize=10)
+            
+            elif plot_type == 4:  # Violin + Strip Plot
+                for i, (x_values, y_values, group) in enumerate(column_data):
+                    sns.violinplot(x=x_values, y=y_values, color=input_color, label=valid_labels[i])
+                    sns.stripplot(x=x_values, y=y_values, color=input_color, legend=False)
+
+        else:
+            print("No valid data to plot.")
+    
+    elif plot_type in [5, 6]:
+        combined_data = None
+
+        if multiple_data:
+            for i, data in enumerate(datasets):
+                if combined_data is None:
+                    combined_data = data.values
+                else:
+                    combined_data += data.values
+            combined_data /= num_datasets  # Averaging the datasets
+        else:
+            combined_data = datasets[0].values
+
+        fig, ax = plt.subplots()
+
+        if plot_type == 5:  # Pseudo Color Plot
+            c = ax.pcolor(combined_data, cmap='jet')
+            plt.colorbar(c, ax=ax)
+        
+        elif plot_type == 6:  # Spectrogram
+            c = ax.imshow(combined_data, aspect='auto', cmap='jet')
+            plt.colorbar(c, ax=ax)
+
+    elif plot_type == 7:  # Rose Plot
+        if len(datasets) != 1:
+            print("Rose plot requires a single dataset.")
+        else:
+            fig, ax = create_rose_plot(datasets[0], input_color)
+
+    plot_title = input('Plot Title --> ')
+    x_label = input('X Label --> ')
+    y_label = input('Y Label --> ')
+    legend_truefals = input('Type 1 for a legend Type 2 for none --> ')
+    
+    if legend_truefals == 1:
+        ax.legend()
+    else:
+        None
+
+    ax.set_title(plot_title)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+
+    plt.show()
+
+if __name__ == "__main__":
+    main()
